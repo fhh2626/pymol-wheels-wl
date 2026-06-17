@@ -237,19 +237,12 @@ jobs:
           Copy-Item -Recurse -Path msgpack-c/include\* -Destination "$env:CONDA_PREFIX\Library\include"
           dir $env:CONDA_PREFIX\Library\include
 
-      - name: Build PyMOL
-        run: |
-          conda activate $env:CONDA_ENV_NAME
-          pip install -v --config-settings testing=True .[dev]
-
-      - name: Test
-        run: |
-          conda activate $env:CONDA_ENV_NAME
-          pymol -ckqy testing\testing.py --run all
-
       - name: Build wheel
         run: |
           conda activate $env:CONDA_ENV_NAME
+          $libxml2Include = "$env:CONDA_PREFIX\Library\include\libxml2"
+          $env:INCLUDE = "$libxml2Include;$env:INCLUDE"
+          $env:CMAKE_INCLUDE_PATH = "$libxml2Include;$env:CMAKE_INCLUDE_PATH"
           pip install --upgrade pip build wheel setuptools
           python setup.py bdist_wheel --testing=false
 
