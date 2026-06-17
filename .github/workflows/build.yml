@@ -267,11 +267,45 @@ jobs:
               --local-version "g${{ needs.detect-version.outputs.source_short_sha }}"
           }
 
+      - name: Bundle Windows DLL dependencies
+        run: |
+          conda activate $env:CONDA_ENV_NAME
+          pip install --upgrade delvewheel
+          New-Item -ItemType Directory -Force wheelhouse | Out-Null
+          $wheel = Get-ChildItem dist/pymol_open_source*.whl | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          python -m delvewheel repair $wheel.FullName `
+            --add-path "$env:CONDA_PREFIX\Library\bin" `
+            --wheel-dir wheelhouse
+          Get-ChildItem wheelhouse
+
+      - name: Test repaired Windows wheel in isolated venv
+        run: |
+          conda activate $env:CONDA_ENV_NAME
+          python -m venv wheel-test
+          $python = ".\wheel-test\Scripts\python.exe"
+          $wheel = Get-ChildItem wheelhouse/pymol_open_source*.whl | Select-Object -First 1
+          & $python -m pip install --no-deps $wheel.FullName
+
+          $condaLibraryBin = [System.IO.Path]::GetFullPath("$env:CONDA_PREFIX\Library\bin").TrimEnd('\')
+          $env:PATH = (($env:PATH -split ';') | Where-Object {
+            if (-not $_) {
+              $false
+            } else {
+              try {
+                [System.IO.Path]::GetFullPath($_).TrimEnd('\') -ne $condaLibraryBin
+              } catch {
+                $true
+              }
+            }
+          }) -join ';'
+
+          & $python -c "import pymol; import pymol._cmd; print('pymol._cmd import ok')"
+
       - name: Upload wheel
         uses: actions/upload-artifact@v6
         with:
           name: pymol-windows-${{ matrix.python-version }}
-          path: dist/pymol_open_source*.whl
+          path: wheelhouse/pymol_open_source*.whl
 
   # --------------------------
   # Build macOS wheels
