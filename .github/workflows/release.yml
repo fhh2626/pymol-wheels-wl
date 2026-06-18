@@ -1,8 +1,6 @@
 name: release
 
 on:
-  # push:
-  # pull_request:
   workflow_dispatch:
     inputs:
       pymol_version:
@@ -19,9 +17,13 @@ env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   PYMOL_VERSION: ${{ inputs.pymol_version || 'dev' }}
 
+concurrency:
+  group: release-${{ inputs.build_run_id || 'latest-successful-build' }}
+  cancel-in-progress: false
+
 jobs:
   github-release:
-    name: Create GitHub Release
+    name: Create or Update GitHub Release
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -82,7 +84,7 @@ jobs:
           echo "Release assets:"
           ls -la release-assets/
 
-      - name: Create GitHub release with wheels
+      - name: Create or update GitHub release with wheels
         uses: actions/github-script@v8
         env:
           SOURCE_REF: ${{ steps.metadata.outputs.source_ref }}
@@ -91,34 +93,30 @@ jobs:
           WHEEL_VERSION: ${{ steps.metadata.outputs.wheel_version }}
           RELEASE_VERSION_LABEL: ${{ steps.metadata.outputs.release_version_label }}
           IS_EXACT_RELEASE: ${{ steps.metadata.outputs.is_exact_release }}
+          BUILD_RUN_ID: ${{ steps.find-build.outputs.run-id }}
         with:
           script: |
             const fs = require('fs');
             const path = require('path');
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
             const releaseVersionLabel = process.env.RELEASE_VERSION_LABEL;
             const upstreamVersion = process.env.UPSTREAM_VERSION;
             const wheelVersion = process.env.WHEEL_VERSION;
             const sourceRef = process.env.SOURCE_REF;
             const sourceSha = process.env.SOURCE_SHA;
+            const buildRunId = process.env.BUILD_RUN_ID;
             const isExactRelease = process.env.IS_EXACT_RELEASE === 'true';
-            const releaseTag = `pymol-${releaseVersionLabel}`;
-            const releaseName = `PyMOL ${releaseVersionLabel}`;
-
-            try {
-              // Create the release
-              const release = await github.rest.repos.createRelease({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                tag_name: releaseTag,
-                name: releaseName,
-                make_latest: isExactRelease ? "true" : "false",
-                body: `PyMOL wheels built and ready for download.
+            const releaseTag = `pymol-${releaseVersionLabel}-build-${buildRunId}`;
+            const releaseName = `PyMOL ${releaseVersionLabel} (build ${buildRunId})`;
+            const releaseBody = `PyMOL wheels built and ready for download.
 
             **Source:** https://github.com/schrodinger/pymol-open-source/
             **PyMOL ref:** \`${sourceRef}\`
             **PyMOL commit:** \`${sourceSha}\`
             **Upstream version:** \`${upstreamVersion}\`
             **Wheel version:** \`${wheelVersion}\`
+            **Build workflow run:** \`${buildRunId}\`
 
             ## Installation
 
@@ -138,38 +136,84 @@ jobs:
             - Windows wheels (x86_64)
             - Python 3.10, 3.11, 3.12, 3.13, 3.14 support
 
-            Built automatically from PyMOL upstream source using official build instructions.`,
-                draft: false,
-                prerelease: !isExactRelease
+            Built automatically from PyMOL upstream source using official build instructions.`;
+
+            let release;
+            try {
+              release = await github.rest.repos.getReleaseByTag({
+                owner,
+                repo,
+                tag: releaseTag,
               });
-
-              console.log('✅ GitHub release created:', release.data.html_url);
-
-              // Upload wheel files as release assets
-              const assetsDir = './release-assets';
-              const files = fs.readdirSync(assetsDir);
-              for (const file of files) {
-                if (file.endsWith('.whl')) {
-                  const filePath = path.join(assetsDir, file);
-                  const fileContent = fs.readFileSync(filePath);
-
-                  await github.rest.repos.uploadReleaseAsset({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    release_id: release.data.id,
-                    name: file,
-                    data: fileContent,
-                  });
-
-                  console.log(`✅ Uploaded ${file} to release`);
-                }
-              }
-
+              release = await github.rest.repos.updateRelease({
+                owner,
+                repo,
+                release_id: release.data.id,
+                tag_name: releaseTag,
+                name: releaseName,
+                body: releaseBody,
+                draft: false,
+                prerelease: !isExactRelease,
+                make_latest: isExactRelease ? 'true' : 'false',
+              });
+              console.log(`Updating existing release: ${release.data.html_url}`);
             } catch (error) {
-              if (error.message.includes('already_exists')) {
-                console.log('⚠️ Release already exists, skipping creation');
-              } else {
-                console.error('❌ Failed to create GitHub release:', error.message);
+              if (error.status !== 404) {
                 throw error;
               }
+
+              try {
+                release = await github.rest.repos.createRelease({
+                  owner,
+                  repo,
+                  tag_name: releaseTag,
+                  name: releaseName,
+                  body: releaseBody,
+                  draft: false,
+                  prerelease: !isExactRelease,
+                  make_latest: isExactRelease ? 'true' : 'false',
+                });
+                console.log(`Created release: ${release.data.html_url}`);
+              } catch (createError) {
+                // If another run created the same build release after our
+                // lookup, reuse it instead of failing with HTTP 422.
+                if (createError.status !== 422) {
+                  throw createError;
+                }
+                release = await github.rest.repos.getReleaseByTag({
+                  owner,
+                  repo,
+                  tag: releaseTag,
+                });
+                console.log(`Reusing concurrently created release: ${release.data.html_url}`);
+              }
+            }
+
+            const existingAssets = await github.paginate(
+              github.rest.repos.listReleaseAssets,
+              { owner, repo, release_id: release.data.id, per_page: 100 }
+            );
+            const assetsByName = new Map(existingAssets.map(asset => [asset.name, asset]));
+            const assetsDir = './release-assets';
+            const files = fs.readdirSync(assetsDir).filter(file => file.endsWith('.whl'));
+
+            for (const file of files) {
+              const existingAsset = assetsByName.get(file);
+              if (existingAsset) {
+                await github.rest.repos.deleteReleaseAsset({
+                  owner,
+                  repo,
+                  asset_id: existingAsset.id,
+                });
+                console.log(`Deleted existing asset: ${file}`);
+              }
+
+              await github.rest.repos.uploadReleaseAsset({
+                owner,
+                repo,
+                release_id: release.data.id,
+                name: file,
+                data: fs.readFileSync(path.join(assetsDir, file)),
+              });
+              console.log(`Uploaded asset: ${file}`);
             }
