@@ -215,6 +215,7 @@ jobs:
               glm `
               libpng `
               libxml2 `
+              libxml2-devel `
               libnetcdf `
 
       - name: Report version
@@ -237,18 +238,78 @@ jobs:
           Copy-Item -Recurse -Path msgpack-c/include\* -Destination "$env:CONDA_PREFIX\Library\include"
           dir $env:CONDA_PREFIX\Library\include
 
+      - name: Verify Windows build inputs
+        run: |
+          conda activate $env:CONDA_ENV_NAME
+          pip install --upgrade pip build wheel setuptools numpy cmake
+
+          $includeRoot = "$env:CONDA_PREFIX\Library\include"
+          $libRoot = "$env:CONDA_PREFIX\Library\lib"
+          $binRoot = "$env:CONDA_PREFIX\Library\bin"
+          $missing = New-Object System.Collections.Generic.List[string]
+
+          function Test-AnyPath {
+            param(
+              [string] $Name,
+              [string[]] $Paths
+            )
+            foreach ($path in $Paths) {
+              if (Test-Path $path) {
+                Write-Host "$Name -> $path"
+                return
+              }
+            }
+            $missing.Add("$Name (checked: $($Paths -join ', '))")
+          }
+
+          Test-AnyPath "GLEW header" @("$includeRoot\GL\glew.h")
+          Test-AnyPath "FreeType ft2build header" @("$includeRoot\ft2build.h", "$includeRoot\freetype2\ft2build.h")
+          Test-AnyPath "FreeType API header" @("$includeRoot\freetype\freetype.h", "$includeRoot\freetype2\freetype\freetype.h")
+          Test-AnyPath "libpng header" @("$includeRoot\png.h", "$includeRoot\libpng16\png.h")
+          Test-AnyPath "libxml2 header" @("$includeRoot\libxml2\libxml\xmlwriter.h")
+          Test-AnyPath "netCDF header" @("$includeRoot\netcdf.h")
+          Test-AnyPath "MMTF header" @("$includeRoot\mmtf\structure_data.hpp")
+          Test-AnyPath "msgpack-c header" @("$includeRoot\msgpack.hpp", "$includeRoot\msgpack\version_master.hpp")
+
+          Test-AnyPath "GLEW import library" @("$libRoot\glew32.lib")
+          Test-AnyPath "FreeType import library" @("$libRoot\freetype.lib")
+          Test-AnyPath "libpng import library" @("$libRoot\libpng.lib", "$libRoot\libpng16.lib")
+          Test-AnyPath "libxml2 import library" @("$libRoot\libxml2.lib")
+          Test-AnyPath "netCDF import library" @("$libRoot\netcdf.lib")
+
+          Test-AnyPath "GLEW runtime DLL" @("$binRoot\glew32.dll")
+          Test-AnyPath "FreeType runtime DLL" @("$binRoot\freetype.dll")
+          Test-AnyPath "libpng runtime DLL" @("$binRoot\libpng16.dll", "$binRoot\libpng.dll")
+          Test-AnyPath "libxml2 runtime DLL" @("$binRoot\libxml2.dll")
+          Test-AnyPath "netCDF runtime DLL" @("$binRoot\netcdf.dll")
+
+          python -c "import numpy; print('numpy', numpy.__version__)"
+          cmake --version
+          if (-not (Get-Command collada2gltf -ErrorAction SilentlyContinue)) {
+            $missing.Add("collada2gltf executable on PATH")
+          }
+
+          if ($missing.Count -gt 0) {
+            Write-Host "Missing Windows build inputs:"
+            $missing | ForEach-Object { Write-Host "  $_" }
+            throw "Missing $($missing.Count) Windows build input(s)"
+          }
+
       - name: Build wheel
         run: |
           conda activate $env:CONDA_ENV_NAME
           $libxml2Include = "$env:CONDA_PREFIX\Library\include\libxml2"
-          $env:INCLUDE = "$libxml2Include;$env:INCLUDE"
-          $env:CMAKE_INCLUDE_PATH = "$libxml2Include;$env:CMAKE_INCLUDE_PATH"
-          pip install --upgrade pip build wheel setuptools numpy cmake
-          python -c "import numpy; print('numpy', numpy.__version__)"
-          cmake --version
+          if (-not (Test-Path "$libxml2Include\libxml\xmlwriter.h")) {
+            $xmlwriter = Get-ChildItem "$env:CONDA_PREFIX\Library\include" -Recurse -Filter xmlwriter.h | Select-Object -First 1
+            if ($xmlwriter -and $xmlwriter.Directory.Name -eq "libxml") {
+              $libxml2Include = $xmlwriter.Directory.Parent.FullName
+            }
+          }
           if (-not (Test-Path "$libxml2Include\libxml\xmlwriter.h")) {
             throw "Missing libxml2 header: $libxml2Include\libxml\xmlwriter.h"
           }
+          $env:INCLUDE = "$libxml2Include;$env:INCLUDE"
+          $env:CMAKE_INCLUDE_PATH = "$libxml2Include;$env:CMAKE_INCLUDE_PATH"
           python setup.py bdist_wheel --testing=false
 
       - name: Rename wheel
@@ -282,6 +343,7 @@ jobs:
           python -m venv wheel-test
           $python = ".\wheel-test\Scripts\python.exe"
           $wheel = Get-ChildItem wheelhouse/pymol_open_source*.whl | Select-Object -First 1
+          & $python -m pip install --upgrade pip numpy
           & $python -m pip install --no-deps $wheel.FullName
 
           $condaLibraryBin = [System.IO.Path]::GetFullPath("$env:CONDA_PREFIX\Library\bin").TrimEnd('\')
