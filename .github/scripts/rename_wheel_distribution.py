@@ -57,6 +57,7 @@ def rename_wheel(wheel_path: Path, new_name: str, delete_old: bool) -> Path:
     new_dist = normalize_distribution(new_name)
     old_dist_info = f"{old_dist}-{version}.dist-info"
     new_dist_info = f"{new_dist}-{version}.dist-info"
+    new_data = f"{new_dist}-{version}.data"
     new_wheel = wheel_path.with_name(f"{new_dist}-{version}-{tags}.whl")
 
     files: dict[str, bytes] = {}
@@ -67,11 +68,19 @@ def rename_wheel(wheel_path: Path, new_name: str, delete_old: bool) -> Path:
             raise ValueError(f"Could not find {old_dist_info}/ in {wheel_path.name}; candidates: {candidates}")
 
         for name in names:
+            if name.endswith("/"):
+                continue
             data = zin.read(name)
             if name.startswith(old_dist_info + "/"):
                 name = new_dist_info + name[len(old_dist_info):]
                 if name == f"{new_dist_info}/METADATA":
                     data = replace_metadata_name(data, new_name)
+            else:
+                top_level, _, rest = name.partition("/")
+                if top_level.endswith(".data") and rest:
+                    if rest == "__init__.py":
+                        continue
+                    name = f"{new_data}/{rest}"
             files[name] = data
 
     record_path = f"{new_dist_info}/RECORD"

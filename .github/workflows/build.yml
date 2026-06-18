@@ -171,9 +171,20 @@ jobs:
           python wheel-build-repo/.github/scripts/rename_wheel_distribution.py dist/*.whl --name pymol-opensource-wl --delete-old
           if [ "${{ needs.detect-version.outputs.is_exact_release }}" != "true" ]; then
             python -m change_wheel_version dist/pymol_opensource_wl-*.whl \
-              --local-version "g${{ needs.detect-version.outputs.source_short_sha }}"
+              --local-version "g${{ needs.detect-version.outputs.source_short_sha }}" \
+              --delete-old-wheel
           fi
           auditwheel repair dist/pymol_opensource_wl-*.whl
+
+      - name: Test repaired Linux wheel in isolated venv
+        run: |
+          python -m venv wheel-test
+          python_bin="./wheel-test/bin/python"
+          "$python_bin" -m pip install --upgrade pip numpy
+          wheel=$(ls wheelhouse/pymol_opensource_wl*.whl | head -n 1)
+          "$python_bin" -m pip install --no-deps "$wheel"
+          "$python_bin" -c "import pymol; import pymol._cmd; print('pymol._cmd import ok')"
+          ./wheel-test/bin/pymol -cq
 
       - name: Upload wheel
         uses: actions/upload-artifact@v6
@@ -337,7 +348,8 @@ jobs:
           if ("${{ needs.detect-version.outputs.is_exact_release }}" -ne "true") {
             $wheel = Get-ChildItem dist/pymol_opensource_wl*.whl | Select-Object -First 1
             python -m change_wheel_version $wheel.FullName `
-              --local-version "g${{ needs.detect-version.outputs.source_short_sha }}"
+              --local-version "g${{ needs.detect-version.outputs.source_short_sha }}" `
+              --delete-old-wheel
           }
 
       - name: Bundle Windows DLL dependencies
