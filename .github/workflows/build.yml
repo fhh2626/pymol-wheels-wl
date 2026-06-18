@@ -243,7 +243,12 @@ jobs:
           $libxml2Include = "$env:CONDA_PREFIX\Library\include\libxml2"
           $env:INCLUDE = "$libxml2Include;$env:INCLUDE"
           $env:CMAKE_INCLUDE_PATH = "$libxml2Include;$env:CMAKE_INCLUDE_PATH"
-          pip install --upgrade pip build wheel setuptools
+          pip install --upgrade pip build wheel setuptools numpy cmake
+          python -c "import numpy; print('numpy', numpy.__version__)"
+          cmake --version
+          if (-not (Test-Path "$libxml2Include\libxml\xmlwriter.h")) {
+            throw "Missing libxml2 header: $libxml2Include\libxml\xmlwriter.h"
+          }
           python setup.py bdist_wheel --testing=false
 
       - name: Rename wheel
