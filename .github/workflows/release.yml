@@ -79,9 +79,6 @@ jobs:
         run: |
           mkdir release-assets
           find artifacts -name "*.whl" -exec cp {} release-assets/ \;
-          # for file in release-assets/*.whl; do
-          #   mv "$file" "${file/pymol/pymol_open_source}"
-          # done
           echo "Release assets:"
           ls -la release-assets/
 
@@ -127,20 +124,19 @@ jobs:
 
             Download the wheel file for your platform and install with:
             \`\`\`bash
-            pip install pymol-*.whl
+            pip install ./pymol_opensource_wl-*.whl
             \`\`\`
 
             Or install from PyPI:
             \`\`\`bash
-            pip install pymol-open-source
+            pip install pymol-opensource-wl
             \`\`\`
 
             ## What's included
 
             - Linux wheels (x86_64)
             - Windows wheels (x86_64)
-            - macOS wheels (x86_64, arm64)
-            - Python 3.9, 3.10, 3.11, 3.12, 3.13 support
+            - Python 3.10, 3.11, 3.12, 3.13, 3.14 support
 
             Built automatically from PyMOL upstream source using official build instructions.`,
                 draft: false,

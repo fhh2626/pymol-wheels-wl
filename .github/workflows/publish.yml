@@ -79,7 +79,7 @@ jobs:
     if: inputs.publish_to_pypi
     environment:
       name: pypi
-      url: https://pypi.org/p/pymol-open-source
+      url: https://pypi.org/p/pymol-opensource-wl
 
     steps:
       - name: Checkout repository
@@ -104,7 +104,7 @@ jobs:
           echo "Wheels in folder:"
           ls -la dist/
           mkdir final_dist
-          find dist -name "pymol_open_source*.whl" -exec cp {} final_dist/ \;
+          find dist -name "pymol_opensource_wl*.whl" -exec cp {} final_dist/ \;
           echo "Wheels to publish:"
           ls -la final_dist/
 
@@ -125,7 +125,7 @@ jobs:
     if: inputs.publish_to_testpypi
     environment:
       name: testpypi
-      url: https://test.pypi.org/p/pymol-open-source
+      url: https://test.pypi.org/p/pymol-opensource-wl
 
     steps:
       - name: Checkout repository
@@ -150,7 +150,7 @@ jobs:
           echo "Wheels in folder:"
           ls -la dist/
           mkdir final_dist
-          find dist -name "pymol_open_source*.whl" -exec cp {} final_dist/ \;
+          find dist -name "pymol_opensource_wl*.whl" -exec cp {} final_dist/ \;
           echo "Wheels to publish:"
           ls -la final_dist/
 

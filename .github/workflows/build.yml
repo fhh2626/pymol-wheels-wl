@@ -104,6 +104,11 @@ jobs:
           repository: schrodinger/pymol-open-source
           ref: ${{ needs.detect-version.outputs.source_ref }}
 
+      - name: Checkout wheel build scripts
+        uses: actions/checkout@v5
+        with:
+          path: wheel-build-repo
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
@@ -162,20 +167,19 @@ jobs:
 
       - name: Rename wheel
         run: |
-          pip install wheeledit auditwheel patchelf change-wheel-version
-          wheeledit dist/*.whl --rename=pymol-open-source
+          pip install auditwheel patchelf change-wheel-version
+          python wheel-build-repo/.github/scripts/rename_wheel_distribution.py dist/*.whl --name pymol-opensource-wl --delete-old
           if [ "${{ needs.detect-version.outputs.is_exact_release }}" != "true" ]; then
-            python -m change_wheel_version dist/pymol_open_source-*.whl \
+            python -m change_wheel_version dist/pymol_opensource_wl-*.whl \
               --local-version "g${{ needs.detect-version.outputs.source_short_sha }}"
           fi
-          auditwheel repair dist/pymol_open_source-*.whl
+          auditwheel repair dist/pymol_opensource_wl-*.whl
 
       - name: Upload wheel
         uses: actions/upload-artifact@v6
         with:
           name: pymol-linux-${{ matrix.python-version }}
-          # path: dist/pymol_open_source*.whl
-          path: wheelhouse/pymol_open_source*.whl
+          path: wheelhouse/pymol_opensource_wl*.whl
 
   # --------------------------
   # Build Windows wheels
@@ -198,6 +202,11 @@ jobs:
         with:
           repository: schrodinger/pymol-open-source
           ref: ${{ needs.detect-version.outputs.source_ref }}
+
+      - name: Checkout wheel build scripts
+        uses: actions/checkout@v5
+        with:
+          path: wheel-build-repo
 
       - name: Install Miniforge
         run: |
@@ -321,12 +330,12 @@ jobs:
       - name: Rename wheel
         run: |
           conda activate $env:CONDA_ENV_NAME
-          pip install --upgrade wheeledit change-wheel-version
+          pip install --upgrade change-wheel-version
           Get-ChildItem dist
           $wheel = Get-ChildItem dist/*.whl | Select-Object -First 1
-          wheeledit $wheel.FullName --rename=pymol-open-source
+          python wheel-build-repo/.github/scripts/rename_wheel_distribution.py $wheel.FullName --name pymol-opensource-wl --delete-old
           if ("${{ needs.detect-version.outputs.is_exact_release }}" -ne "true") {
-            $wheel = Get-ChildItem dist/pymol_open_source*.whl | Select-Object -First 1
+            $wheel = Get-ChildItem dist/pymol_opensource_wl*.whl | Select-Object -First 1
             python -m change_wheel_version $wheel.FullName `
               --local-version "g${{ needs.detect-version.outputs.source_short_sha }}"
           }
@@ -336,7 +345,7 @@ jobs:
           conda activate $env:CONDA_ENV_NAME
           pip install --upgrade delvewheel
           New-Item -ItemType Directory -Force wheelhouse | Out-Null
-          $wheel = Get-ChildItem dist/pymol_open_source*.whl | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          $wheel = Get-ChildItem dist/pymol_opensource_wl*.whl | Sort-Object LastWriteTime -Descending | Select-Object -First 1
           python -m delvewheel repair $wheel.FullName `
             --add-path "$env:CONDA_PREFIX\Library\bin" `
             --wheel-dir wheelhouse
@@ -347,7 +356,7 @@ jobs:
           conda activate $env:CONDA_ENV_NAME
           python -m venv wheel-test
           $python = ".\wheel-test\Scripts\python.exe"
-          $wheel = Get-ChildItem wheelhouse/pymol_open_source*.whl | Select-Object -First 1
+          $wheel = Get-ChildItem wheelhouse/pymol_opensource_wl*.whl | Select-Object -First 1
           & $python -m pip install --upgrade pip numpy
           & $python -m pip install --no-deps $wheel.FullName
 
@@ -370,5 +379,5 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: pymol-windows-${{ matrix.python-version }}
-          path: wheelhouse/pymol_open_source*.whl
+          path: wheelhouse/pymol_opensource_wl*.whl
 
