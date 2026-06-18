@@ -39,6 +39,27 @@ def replace_metadata_name(content: bytes, new_name: str) -> bytes:
     return text.encode("utf-8")
 
 
+def add_runtime_requirements(content: bytes, requirements: list[str]) -> bytes:
+    """Add unconditional runtime requirements to wheel METADATA.
+
+    Upstream PyMOL currently exposes most of its Python dependencies only
+    through the ``dev`` extra.  A dependency guarded by ``extra == 'dev'`` is
+    not a runtime dependency, so it must not suppress the unconditional entry
+    added here.
+    """
+    text = content.decode("utf-8")
+    header, separator, body = text.partition("\n\n")
+    existing = {
+        line.removeprefix("Requires-Dist:").strip()
+        for line in header.splitlines()
+        if line.startswith("Requires-Dist:") and ";" not in line
+    }
+    additions = [requirement for requirement in requirements if requirement not in existing]
+    if additions:
+        header += "".join(f"\nRequires-Dist: {requirement}" for requirement in additions)
+    return (header + separator + body).encode("utf-8")
+
+
 def render_record(files: dict[str, bytes], record_path: str) -> bytes:
     out = io.StringIO(newline="")
     writer = csv.writer(out, lineterminator="\n")
@@ -51,7 +72,12 @@ def render_record(files: dict[str, bytes], record_path: str) -> bytes:
     return out.getvalue().encode("utf-8")
 
 
-def rename_wheel(wheel_path: Path, new_name: str, delete_old: bool) -> Path:
+def rename_wheel(
+    wheel_path: Path,
+    new_name: str,
+    delete_old: bool,
+    requirements: list[str] | None = None,
+) -> Path:
     old_distribution, version, tags = parse_wheel_filename(wheel_path)
     old_dist = normalize_distribution(old_distribution)
     new_dist = normalize_distribution(new_name)
@@ -75,6 +101,7 @@ def rename_wheel(wheel_path: Path, new_name: str, delete_old: bool) -> Path:
                 name = new_dist_info + name[len(old_dist_info):]
                 if name == f"{new_dist_info}/METADATA":
                     data = replace_metadata_name(data, new_name)
+                    data = add_runtime_requirements(data, requirements or [])
             else:
                 top_level, _, rest = name.partition("/")
                 if top_level.endswith(".data") and rest:
@@ -102,10 +129,16 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("wheel", type=Path)
     parser.add_argument("--name", required=True)
+    parser.add_argument(
+        "--require",
+        action="append",
+        default=[],
+        help="Add an unconditional Requires-Dist entry (repeatable)",
+    )
     parser.add_argument("--delete-old", action="store_true")
     args = parser.parse_args()
 
-    renamed = rename_wheel(args.wheel, args.name, args.delete_old)
+    renamed = rename_wheel(args.wheel, args.name, args.delete_old, args.require)
     print(renamed)
 
 
