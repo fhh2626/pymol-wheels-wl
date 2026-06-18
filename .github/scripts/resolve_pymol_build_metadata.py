@@ -29,11 +29,21 @@ def is_prerelease_version(version: str) -> bool:
     return bool(re.search(r"(a|b|rc|dev)\d*$", version, flags=re.IGNORECASE))
 
 
+def normalize_public_version(version: str) -> str:
+    return re.sub(
+        r"(a|b|rc)$",
+        lambda match: match.group(1).lower() + "0",
+        version,
+        flags=re.IGNORECASE,
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo-dir", default=".", help="Path to the checked out PyMOL repository")
     parser.add_argument("--json-out", required=True, help="Where to write the resolved metadata JSON")
     parser.add_argument("--source-ref", default="", help="The ref requested by the workflow")
+    parser.add_argument("--build-number", default="", help="Unique integer for PyPI-compatible dev builds")
     args = parser.parse_args()
 
     repo_dir = Path(args.repo_dir).resolve()
@@ -51,7 +61,14 @@ def main() -> None:
         and upstream_version in normalized_tags
     )
 
-    wheel_version = upstream_version if is_exact_release else f"{upstream_version}+g{source_short_sha}"
+    public_version = normalize_public_version(upstream_version)
+    if is_exact_release:
+        wheel_version = public_version
+    else:
+        build_number = args.build_number or "0"
+        if not build_number.isdigit():
+            raise ValueError(f"--build-number must be numeric, got: {build_number}")
+        wheel_version = f"{public_version}.dev{build_number}"
     release_version_label = upstream_version if is_exact_release else f"{upstream_version}_{source_short_sha}"
 
     metadata = {

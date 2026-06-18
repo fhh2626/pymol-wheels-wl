@@ -77,7 +77,8 @@ jobs:
           python .github/scripts/resolve_pymol_build_metadata.py \
             --repo-dir pymol-source \
             --json-out build-metadata/version.json \
-            --source-ref "${{ steps.resolve-ref.outputs.ref }}"
+            --source-ref "${{ steps.resolve-ref.outputs.ref }}" \
+            --build-number "${{ github.run_id }}"
 
       - name: Upload build metadata
         uses: actions/upload-artifact@v6
@@ -171,7 +172,7 @@ jobs:
           python wheel-build-repo/.github/scripts/rename_wheel_distribution.py dist/*.whl --name pymol-opensource-wl --delete-old
           if [ "${{ needs.detect-version.outputs.is_exact_release }}" != "true" ]; then
             python -m change_wheel_version dist/pymol_opensource_wl-*.whl \
-              --local-version "g${{ needs.detect-version.outputs.source_short_sha }}" \
+              --version "${{ needs.detect-version.outputs.wheel_version }}" \
               --delete-old-wheel
           fi
           auditwheel repair dist/pymol_opensource_wl-*.whl
@@ -348,7 +349,7 @@ jobs:
           if ("${{ needs.detect-version.outputs.is_exact_release }}" -ne "true") {
             $wheel = Get-ChildItem dist/pymol_opensource_wl*.whl | Select-Object -First 1
             python -m change_wheel_version $wheel.FullName `
-              --local-version "g${{ needs.detect-version.outputs.source_short_sha }}" `
+              --version "${{ needs.detect-version.outputs.wheel_version }}" `
               --delete-old-wheel
           }
 
