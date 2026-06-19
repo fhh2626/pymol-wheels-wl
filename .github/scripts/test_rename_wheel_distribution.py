@@ -58,11 +58,17 @@ class RenameWheelTests(unittest.TestCase):
                 wheel,
                 "pymol-opensource-wl",
                 True,
+            )
+            finalized = MODULE.rename_wheel(
+                renamed,
+                "pymol-opensource-wl",
+                False,
                 ["PySide6>=6.10.1", "biopython>=1.80", "msgpack>=1.0.8"],
             )
 
             self.assertFalse(wheel.exists())
-            with zipfile.ZipFile(renamed) as archive:
+            self.assertEqual(finalized, renamed)
+            with zipfile.ZipFile(finalized) as archive:
                 dist_info = "pymol_opensource_wl-3.2.0.dist-info"
                 metadata = archive.read(f"{dist_info}/METADATA").decode()
                 record = archive.read(f"{dist_info}/RECORD").decode()
